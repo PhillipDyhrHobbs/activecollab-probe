@@ -32,8 +32,8 @@
   
   // -- No need to change anything bellow this line --------------------------------------
   
-  define('PROBE_VERSION', '4.2');
-  define('PROBE_FOR', 'activeCollab 4.2 and Newer');
+  define('PROBE_VERSION', '4.5');
+  define('PROBE_FOR', 'activeCollab 4.5 and Newer');
 
   define('STATUS_OK', 'ok');
   define('STATUS_WARNING', 'warning');
@@ -189,11 +189,12 @@
   /**
    * Validate PHP platform
    *
-   * @param array $result
+   * @param array $results
+   * @return bool
    */
   function validate_php(&$results) {
-    if(version_compare(PHP_VERSION, '5.3.3') == -1) {
-      $results[] = new TestResult('Minimum PHP version required in order to run activeCollab is PHP 5.3.3. Your PHP version: ' . PHP_VERSION, STATUS_ERROR);
+    if(version_compare(PHP_VERSION, '5.4', '<')) {
+      $results[] = new TestResult('Minimum PHP version required in order to run activeCollab is PHP 5.4. Your PHP version: ' . PHP_VERSION, STATUS_ERROR);
       return false;
     } else {
       $results[] = new TestResult('Your PHP version is ' . PHP_VERSION, STATUS_OK);
@@ -204,7 +205,8 @@
   /**
    * Validate memory limit
    *
-   * @param array $result
+   * @param array $results
+   * @return bool
    */
   function validate_memory_limit(&$results) {
     $memory_limit = php_config_value_to_bytes(ini_get('memory_limit'));
@@ -224,11 +226,12 @@
    * Validate PHP extensions
    *
    * @param array $results
+   * @return bool
    */
   function validate_extensions(&$results) {
     $ok = true;
     
-    $required_extensions = array('mysql', 'pcre', 'tokenizer', 'ctype', 'session', 'json', 'xml', 'dom', 'phar');
+    $required_extensions = array('mysqli', 'pcre', 'tokenizer', 'ctype', 'session', 'json', 'xml', 'dom', 'phar');
     
     foreach($required_extensions as $required_extension) {
       if(extension_loaded($required_extension)) {
@@ -276,6 +279,7 @@
    * Validate Zend Engine compatibility mode
    *
    * @param array $results
+   * @return bool
    */
   function validate_zend_compatibility_mode(&$results) {
     $ok = true;
@@ -347,12 +351,12 @@
   /**
    * Return true if MySQL supports InnoDB storage engine
    *
-   * @param resource $link
+   * @param mysqli $link
    * @return bool
    */
   function check_have_inno($link) {
-    if($result = mysql_query('SHOW ENGINES', $link)) {
-      while($engine = mysql_fetch_assoc($result)) {
+    if($result = $link->query('SHOW ENGINES')) {
+      while($engine = $result->fetch_assoc()) {
         if(strtolower($engine['Engine']) == 'innodb' && in_array(strtolower($engine['Support']), array('yes', 'default'))) {
           return true;
         } // if
@@ -389,34 +393,27 @@
 
   $results = array();
   
-  if($connection = mysql_connect(DB_HOST, DB_USER, DB_PASS)) {
-    $results[] = new TestResult('Connected to database as ' . DB_USER . '@' . DB_HOST, STATUS_OK);
-    
-    if(mysql_select_db(DB_NAME, $connection)) {
-      $results[] = new TestResult('Database "' . DB_NAME . '" selected', STATUS_OK);
-      
-      $mysql_version = mysql_get_server_info($connection);
-      
-      if(version_compare($mysql_version, '5.0') >= 0) {
-        $results[] = new TestResult('MySQL version is ' . $mysql_version, STATUS_OK);
-        
-        $have_inno = check_have_inno($connection);
-        
-        if($have_inno) {
-          $results[] = new TestResult('InnoDB support is enabled');
-        } else {
-          $results[] = new TestResult('No InnoDB support. Although activeCollab can use MyISAM storage engine InnoDB is HIGHLY recommended!', STATUS_WARNING);
-        }
+  if($connection = new mysqli(DB_HOST, DB_USER, DB_PASS, DB_NAME)) {
+    $results[] = new TestResult('Connected to ' . DB_NAME . ' database as ' . DB_USER . '@' . DB_HOST, STATUS_OK);
+
+    $mysql_version = $connection->get_server_info();
+
+    if(version_compare($mysql_version, '5.0') >= 0) {
+      $results[] = new TestResult('MySQL version is ' . $mysql_version, STATUS_OK);
+
+      $have_inno = check_have_inno($connection);
+
+      if($have_inno) {
+        $results[] = new TestResult('InnoDB support is enabled');
       } else {
-        $results[] = new TestResult('Your MySQL version is ' . $mysql_version . '. We recommend upgrading to at least MySQL5!', STATUS_ERROR);
-        $mysql_ok = false;
-      } // if
+        $results[] = new TestResult('No InnoDB support. Although activeCollab can use MyISAM storage engine InnoDB is HIGHLY recommended!', STATUS_WARNING);
+      }
     } else {
-      $results[] = new TestResult('Failed to select database. MySQL said: ' . mysql_error(), STATUS_ERROR);
+      $results[] = new TestResult('Your MySQL version is ' . $mysql_version . '. We recommend upgrading to at least MySQL5!', STATUS_ERROR);
       $mysql_ok = false;
     } // if
   } else {
-    $results[] = new TestResult('Failed to connect to database. MySQL said: ' . mysql_error(), STATUS_ERROR);
+    $results[] = new TestResult('Failed to connect to database. MySQL said: ' . $connection->error, STATUS_ERROR);
     $mysql_ok = false;
   } // if
   
